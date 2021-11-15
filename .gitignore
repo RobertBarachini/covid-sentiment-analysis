@@ -1,0 +1,11 @@
+# .vscode folder
+.vscode
+
+# Python cache
+*.pyc
+
+# All downloaded html
+*.html
+
+# All json (for now - if needed set by folder or exclude)
+*.json
