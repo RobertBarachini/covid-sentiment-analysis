@@ -11,9 +11,9 @@ def set_logging(filename):
 	logger = logging.getLogger(filename)
 	level = None
 	if config.environment == "debug":
-		level = logging.INFO
-	else: 
 		level = logging.DEBUG
+	else: 
+		level = logging.INFO
 	logger.setLevel(level)
 	logger.addHandler(handler)
 	logger.info("\n")

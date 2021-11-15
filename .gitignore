@@ -9,3 +9,6 @@
 
 # All json (for now - if needed set by folder or exclude)
 *.json
+
+# Logs
+logs
