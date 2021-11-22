@@ -19,3 +19,22 @@ def set_logging(filename):
 	logger.info("\n")
 	logger.info(f"Set up logging for '{filename}' with level '{level}'")
 	return logger
+
+def write_to_file(filepath, contents):
+	if not os.path.exists(os.path.dirname(filepath)):
+		os.makedirs(os.path.dirname(filepath))
+	with open(filepath, 'w', encoding='utf-8') as f:
+		try:
+			f.write(contents)
+		except Exception as e:
+			print('Exception writing to file: ' + str(e))
+
+def read_from_file(filepath):
+	with open(filepath, 'r', encoding='utf-8') as f:
+		return f.read()
+		
+def get_safe_filename(filename):
+	# TODO find replacement characters similar in look
+	filename = filename.replace('<', '_').replace('>', '_').replace(':', '_').replace('"', '_').replace('/', '_').replace('\\', '_').replace('|', '_').replace('?', '_').replace('*', '_')
+	# filename = filename.replace(".", "_")
+	return filename

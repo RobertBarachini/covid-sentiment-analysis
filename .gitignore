@@ -3,12 +3,15 @@
 
 # Python cache
 *.pyc
-
 # All downloaded html
 *.html
-
 # All json (for now - if needed set by folder or exclude)
 *.json
+# All .csv
+*.csv
 
 # Logs
 logs
+
+# Local files meant for testing scripts and such
+src/data-aggregator/24ur/LOCAL
