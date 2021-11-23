@@ -9,7 +9,7 @@ import threading
 sys.path.append(os.path.abspath("src"))
 import UtilFunctions as uf
 
-num_workers = 2
+num_workers = 20
 active_workers = 0 #num_workers
 script_name = "24ur-runner"
 json_name = "article_links_smol.json"
@@ -18,6 +18,14 @@ worker_prefix = "worker_"
 current_dir = os.getcwd()
 script_pathname = os.path.abspath(__file__)
 script_dir = os.path.dirname(script_pathname)
+
+# Enable logging for this file
+log = uf.set_logging(script_name)
+log.info(f"Script name: {script_name}")
+log.info(f"JSON name: {json_name}")
+log.info(f"Worker prefix: {worker_prefix}")
+log.info(f"Number of workers: {num_workers}")
+log.info("")
 
 message_queue = queue.Queue()
 
@@ -53,35 +61,24 @@ def enqueue_stream(work_object, queue, type):
 	elif type == 2:
 		stream = work_object["proc"].stderr
 	for line in iter(stream.readline, b''):
-		# queue.put(str(type) + line.decode('utf-8'))
-		# queue.put(f"{type}: {line}")
-		# queue.put(line.decode('utf-8'))
 		queue.put(f"{type}: {line.decode('utf-8')}")
 	stream.close()
 
 def enqueue_process(worker_object, queue):
-	# global active_workers
-	# active_workers -= 1
 	proc = worker_object["proc"]
 	exit_code = proc.wait()
-	queue.put([f"Exited with code {exit_code}\n", exit_code])
-	# TODO how to safely join threads?
-	# worker_object["thread_output"].join()
-	# worker_object["thread_error"].join()
-	# worker_object["thread_exit"].join()
-	# TODO restart failed workers if exit_code != 0
-	# if exit_code != 0:
-	# 	print(f"Restarting [{get_worker_name(worker_object['index'])}] - Reason: Exit-code={exit_code}")
-	# 	worker_object = run_worker(worker_object["index"])
+	queue.put([f"[{get_worker_name(worker_object['index'])}] Exited with code {exit_code}\n", exit_code, worker_object])
 
 def run_worker(worker_index):
 	global message_queue
 	# global active_workers
 	# Worker name is the prefix + the worker number padded with zeros
 	full_worker_name = get_worker_name(worker_index)
+	print(f"Starting worker [{full_worker_name}]")
+	log.info(f"Starting worker [{full_worker_name}]")
 	cmd = []
 	cmd.append("python")
-	cmd.append(f"{os.path.join(script_dir, 'scraper.py')}") #'async_tester.py')}")
+	cmd.append(f"{os.path.join(script_dir, 'scraper.py')}") #'LOCAL/async_tester.py')}")
 	cmd.append(f"{full_worker_name}")
 	proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)#, bufsize=1, universal_newlines=True, close_fds=True)
 	proc.daemon = True
@@ -98,32 +95,69 @@ def run_worker(worker_index):
 	thread_error.start()
 	thread_exit.start()
 	# active_workers += 1
+	print(f"Started worker [{full_worker_name}]")
+	log.info(f"Started worker [{full_worker_name}]")
 	return worker_object
 
 def run_workers():
 	global message_queue
 	# global active_workers
-	active_workers = num_workers
+	active_workers = 0
 	worker_objects = {}
 	for i in range(0, num_workers):
 		worker_object = run_worker(i)
 		worker_objects[i] = worker_object
+		active_workers += 1
 	while num_workers > 0:
 		line = message_queue.get()
 		if line:
 			if isinstance(line, list):
 				print(f"  {line[0]}", end='')
+				exit_code = line[1]
+				worker_object_exit = line[2]
+				log.info(f"  {line[0]}")
+				log.info(f"Worker [{get_worker_name(worker_object_exit['index'])}] exited with code {exit_code}")
+				t_out = worker_object_exit["thread_output"]
+				t_err = worker_object_exit["thread_error"]
+				t_exit = worker_object_exit["thread_exit"]
+				# Clearing object
+				log.info(f"Deleting threads from worker_object")
+				del worker_object_exit["thread_output"]
+				del worker_object_exit["thread_error"]
+				del worker_object_exit["thread_exit"]
+				# Clearing object from objects dict
+				log.info(f"Deleting worker_object from worker_objects")
+				del worker_objects[worker_object_exit["index"]]
+				# Joining threads
+				log.info(f"Joining worker threads.")
+				t_out.join()
+				t_err.join()
+				t_exit.join()
+				log.info(f"Worker [{get_worker_name(worker_object_exit['index'])}] joined.")
 				active_workers -= 1
+				# Restart worker if exit code is not 0
+				# TODO add max restart count
+				if exit_code != 0:
+					print(f"Restarting [{get_worker_name(worker_object_exit['index'])}] - Reason: Exit-code={exit_code}")
+					log.info(f"Restarting [{get_worker_name(worker_object_exit['index'])}] - Reason: Exit-code={exit_code}")
+					worker_object_new = run_worker(worker_object_exit["index"])
+					worker_objects[worker_object_exit["index"]] = worker_object_new
+					active_workers += 1
+					log.info(f"Restarted [{get_worker_name(worker_object_exit['index'])}]")
+				print(f"Number of active workers: {active_workers}")
 			else: # isinstance(line, str):
-				print(f"  {line}", end='')
+				# print(f"  {line}", end='') # uncomment this line to see all stdout/stderr
+				None
 		if active_workers == 0:
 			break
 		time.sleep(0.01)
-	# for worker_object in worker_objects.values():
-	# 	worker_object["thread_output"].join()
-	# 	worker_object["thread_error"].join()
-	# 	worker_object["thread_exit"].join()
 
 if __name__ == "__main__":
+	print("Preparing workloads")
+	log.info("Preparing workloads")
 	prepare_workloads()
+	print("Running workers")
+	log.info("Running workers")
 	run_workers()
+	print("Safely finishing __main__")
+	log.info("Safely finishing __main__")

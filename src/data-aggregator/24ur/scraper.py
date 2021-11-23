@@ -19,6 +19,8 @@ import UtilFunctions as uf
 
 # TODO
 # randomly pick m proxies from the list of n proxies from https://checkerproxy.net/
+# remove selenium logging
+# SKIP: "Stran, ki ste jo zahtevali, ne obstaja!" Examaple: https://www.24ur.com/novice/slovenija/tradicionalni-slovenski-zajtrk-s-preverjenim-slovenskim-medom-iz-medexa.html
 
 # TODO HOW DO I TURN OFF THE LOGGING???
 # Turn off selenium logging
@@ -39,11 +41,6 @@ logging.config.dictConfig({
 import logging
 for name, logger in logging.root.manager.loggerDict.items():
 	logger.disabled = True
-
-# TODO
-# implement a way to use this as a worker in a thread pool or processes
-# remove selenium logging
-# SKIP: "Stran, ki ste jo zahtevali, ne obstaja!" Examaple: https://www.24ur.com/novice/slovenija/tradicionalni-slovenski-zajtrk-s-preverjenim-slovenskim-medom-iz-medexa.html
 
 # Check if more run arguments are present == script initiated as a worker
 args = sys.argv[1:]
@@ -69,6 +66,7 @@ timeout_exception = 0.5
 max_retries = 5
 date_min = datetime(2019, 11, 30)
 date_max = datetime(2021, 12, 1)
+time_per_article = 5 * 60 # 5 minutes
 
 current_dir = os.getcwd()
 script_pathname = os.path.abspath(__file__)
@@ -77,7 +75,7 @@ script_dir = os.path.dirname(script_pathname)
 def init_driver():
 	global driver
 	options = webdriver.ChromeOptions()
-	# options.add_argument('--headless')
+	options.add_argument('--headless') # uncomment this for bigger workloads - especially when employed as a worker script
 	options.add_argument('--incognito')
 	options.add_argument('--log-level=0')
 	# service_log_path = os.devnull
@@ -145,6 +143,7 @@ def get_page(url, selector, skip_condition=None, skip_selector=None, counter=max
 	return driver.page_source
 
 def scrape_article(article_obj):
+	start_time = time.perf_counter()
 	global driver
 	# Reload driver for each article to prevent getting errors on page content reload
 	driver = init_driver()
@@ -162,6 +161,8 @@ def scrape_article(article_obj):
 	article_title = article_obj["title"]
 	article_title_safe = uf.get_safe_filename(article_title)
 	filename_final = f"{datetime_filesystem} {article_title_safe}.html"
+	temp_path = os.path.join(*[script_dir, "temp", filename_final])
+	write_path = os.path.join(*[script_dir, "raw", filename_final])
 
 	skip_element = None
 	try:
@@ -217,6 +218,11 @@ def scrape_article(article_obj):
 					comments_container_new_str = comments_container_new.text
 					if comments_container_new_str != comments_container_old_str:
 						# We assume more comments have been loaded
+						log.info("More comments loaded.")
+						if len(comments_container_new_str) > len(comments_container_old_str):
+							log.info("Saving intermittent results to a temp folder")
+							uf.write_to_file(temp_path, page.encode('utf-8').decode('utf-8'))
+							log.info(f"Intermittent results saved.")
 						# print("More content loaded - breaking repeat loop")
 						# time.sleep(timeout_exception)
 						break
@@ -235,15 +241,20 @@ def scrape_article(article_obj):
 				page_source = driver.page_source
 				if len(page_source) > len(page):
 					page = page_source
+				if time.perf_counter() - start_time > time_per_article:
+					log.info("Article timeout reached. Breaking.")
+					break
 				time.sleep(polling_element)
 			# except Exception as e:
 			# 	log.error(f"Exception while trying to load all comments:\n{e}")
 			# 	time.sleep(timeout_exception)
-	write_path = os.path.join(*[script_dir, "raw", filename_final])
 	log.info(f"Comments loaded, writing source to file. ({write_path})")
 	# Save dynamically loaded source
 	uf.write_to_file(write_path, page.encode('utf-8').decode('utf-8'))
 	log.info("Finished writing to file ({write_path})")
+	log.info("Removing temp file.")
+	if os.path.exists(temp_path):
+		os.remove(temp_path)
 	driver.close() # driver.quit() takes a considerably longer time than driver.close()
 	driver = None
 
@@ -289,5 +300,8 @@ if __name__ == "__main__":
 	log.info("Starting main loop")
 	main_loop()
 	log.info("Finished main loop")
-	driver.quit()
+	try:
+		driver.quit()
+	except Exception as e:
+		log.error(f"Exception while quitting driver:\n{e}")
 	log.info("Safely exiting")
