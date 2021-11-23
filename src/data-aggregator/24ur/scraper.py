@@ -14,33 +14,11 @@ from datetime import datetime
 import sys
 import json
 sys.path.append(os.path.abspath("src"))
-import config
 import UtilFunctions as uf
 
 # TODO
 # randomly pick m proxies from the list of n proxies from https://checkerproxy.net/
-# remove selenium logging
 # SKIP: "Stran, ki ste jo zahtevali, ne obstaja!" Examaple: https://www.24ur.com/novice/slovenija/tradicionalni-slovenski-zajtrk-s-preverjenim-slovenskim-medom-iz-medexa.html
-
-# TODO HOW DO I TURN OFF THE LOGGING???
-# Turn off selenium logging
-import logging
-logging_exclusions = [
-	"selenium",
-	"webdriver",
-	"selenium.webdriver.remote.remote_connection"
-]
-for logging_exclusion in logging_exclusions:
-	logging.getLogger(logging_exclusion).setLevel(logging.FATAL)
-
-import logging.config
-logging.config.dictConfig({
-    'version': 1,
-    'disable_existing_loggers': True
-})
-import logging
-for name, logger in logging.root.manager.loggerDict.items():
-	logger.disabled = True
 
 # Check if more run arguments are present == script initiated as a worker
 args = sys.argv[1:]
@@ -75,12 +53,16 @@ script_dir = os.path.dirname(script_pathname)
 def init_driver():
 	global driver
 	options = webdriver.ChromeOptions()
-	options.add_argument('--headless') # uncomment this for bigger workloads - especially when employed as a worker script
 	options.add_argument('--incognito')
-	options.add_argument('--log-level=0')
+	options.add_argument('--headless') # uncomment this for bigger workloads - especially when employed as a worker script
+	# options.add_argument('--log-level=3')
+	# options.add_argument('--disable-logging')
+	# options.add_argument('--silent')
+	# options.add_argument('--disable-gpu')
+	options.add_experimental_option('excludeSwitches', ['enable-logging']) # this ACTUALLY disables logging
 	# service_log_path = os.devnull
-	service_log_path = "NUL"
-	driver = webdriver.Chrome(chrome_options=options, service_log_path=service_log_path)
+	# service_log_path = "NUL"
+	driver = webdriver.Chrome(chrome_options=options)#, service_log_path=service_log_path)
 	driver.get("about:blank")
 	driver.set_window_position(-1000, 0)
 	driver.maximize_window()
@@ -196,7 +178,6 @@ def scrape_article(article_obj):
 							EC.visibility_of_element_located((By.CSS_SELECTOR, "#onl-article-comments > div > div.comments"))
 					)
 				except Exception as e:
-					# TODO implement wait exception
 					time.sleep(timeout_exception)
 					log.error(f"Exception waiting for (old) comments container element:\n{e}")
 				comments_container_old_str = comments_container_old.text
@@ -286,7 +267,7 @@ def main_loop():
 				if counter + 1 % 5 == 0:
 					log.info(f"Saving updated dictionary objects to {json_name}")
 					uf.write_to_file(os.path.join(script_dir, json_name), json.dumps(articles_dict, indent=2))
-				# TODO add some sensible timer before trying to scrape the next article
+				# Add some sensible timer before trying to scrape the next article?
 				# time.sleep(1)
 			else:
 				log.info(f"Article {article_obj['link']} already scraped or not eligible")

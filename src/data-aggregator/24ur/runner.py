@@ -120,11 +120,14 @@ def run_workers():
 				t_out = worker_object_exit["thread_output"]
 				t_err = worker_object_exit["thread_error"]
 				t_exit = worker_object_exit["thread_exit"]
+				# TODO
+				# is there an edge case where we'd need to terminate the process by hand
 				# Clearing object
-				log.info(f"Deleting threads from worker_object")
+				log.info(f"Deleting threads and process from worker_object")
 				del worker_object_exit["thread_output"]
 				del worker_object_exit["thread_error"]
 				del worker_object_exit["thread_exit"]
+				del worker_object_exit["proc"]
 				# Clearing object from objects dict
 				log.info(f"Deleting worker_object from worker_objects")
 				del worker_objects[worker_object_exit["index"]]
