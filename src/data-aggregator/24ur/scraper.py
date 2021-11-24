@@ -58,7 +58,7 @@ def init_driver():
 	# options.add_argument('--log-level=3')
 	# options.add_argument('--disable-logging')
 	# options.add_argument('--silent')
-	# options.add_argument('--disable-gpu')
+	options.add_argument('--disable-gpu')
 	options.add_experimental_option('excludeSwitches', ['enable-logging']) # this ACTUALLY disables logging
 	# service_log_path = os.devnull
 	# service_log_path = "NUL"

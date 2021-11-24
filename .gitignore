@@ -9,6 +9,9 @@
 *.json
 # All .csv
 *.csv
+# Zipped files - for sharing intermittent results
+*.zip
+*.7z
 
 # Logs
 logs
