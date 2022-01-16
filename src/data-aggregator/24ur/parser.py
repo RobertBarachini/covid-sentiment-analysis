@@ -7,6 +7,7 @@ from datetime import datetime
 sys.path.append(os.path.abspath("src"))
 import UtilFunctions as uf
 import numpy as np
+import stats as st
 
 # TODO:
 # * add logging and error handling to catch edge cases
@@ -16,6 +17,9 @@ script_pathname = os.path.abspath(__file__)
 script_dir = os.path.dirname(script_pathname)
 processed_json_dir = os.path.join(*[script_dir, "processed/json"])
 
+date_min = datetime(2019, 11, 30)
+date_max = datetime(2021, 12, 1)
+
 args = sys.argv[1:]
 script_name = "24ur-processor"
 print(f"Starting args: {args}")
@@ -24,6 +28,7 @@ if len(args) > 0:
 json_name = f"{script_name}.json"
 
 # json_name = "article_links.json"
+# json_name = "article_single_tester.json"
 # print("EXITING - SAFETY")
 # sys.exit(0)
 
@@ -45,7 +50,7 @@ def process_html(article_obj):
 		# print(f"JSON path: {json_path}")
 		# print()
 		if not os.path.exists(raw_path) or os.path.exists(json_path):
-			print(f"Input file does not exist or has already been processed.")
+			# print(f"Input file does not exist or has already been processed.")
 			return
 
 		article_json = {}
@@ -54,43 +59,28 @@ def process_html(article_obj):
 		# Process html
 		html = uf.read_from_file(raw_path) 
 		html = bs(html, 'html.parser')
-		# NOTE - Comments
-		comments_containers = html.find_all(class_='comments')
-		comments_json = []
-		for comments_container in comments_containers:
-			comments = comments_container.find_all(class_='comment')
-			last_toplevel_comment = "-1"
-			for comment in comments:
-				if "comment--add" in comment.attrs["class"]:
-					continue
-				comment_dict = {}
-				comment_dict["id"] = comment.attrs["id"]
-				comment_dict["timestamp"] = comment.find(class_='comment__timestamp').text.strip()
-				comment_dict["body"] = comment.find(class_='comment__body').text.strip()
-				comment_dict["author"] = comment.find(class_='comment__author').text.strip()
-				comment_dict["likes"] = comment.find_all(class_='icon-text__value')[1].text.strip()
-				comment_dict["dislikes"] = comment.find_all(class_='icon-text__value')[2].text.strip()
-				comment_dict["type"] = "comment"
-				comment_dict["parent"] = ""
-				if "comment--reply" in comment.attrs["class"]:
-					comment_dict["type"] = "reply"
-					comment_dict["parent"] = last_toplevel_comment
-				else:
-					last_toplevel_comment = comment_dict["id"]
-				comments_json.append(comment_dict)
-		if comments_container:
-			article_json["comments"] = comments_json
-			article_json["scraped_comments_count"] = len(comments_json)
-		# TODO:
-		# based on this article: https://www.24ur.com/novice/slovenija/v-dz-kar-15-urna-interpelacija-solske-ministrice-simone-kustec.html
-		# <div class="article__label label label--section-201"> SLOVENIJA </div>
-		# determine category and labels and such - 24ur.com/novice -> novice -> slovenija
 		# NOTE - Article header
-		article_header = html.find(class_='article__header')
+		article_header = html.find(class_='article__header', recursive=True)
+		if not article_header: # probably an ad or article which has been deleted since indexing and before parsing
+			article_json["type"] = "deleted"
+			return # SKIP article if deleted
+		try:
+			article_labels_obj = article_header.find_all(class_='article__label')
+			article_labels = [article_label.text.strip() for article_label in article_labels_obj]
+			if "OGLAS" in article_labels:
+				article_json["type"] = "advertisement"
+			else:
+				article_json["type"] = "article"
+			article_json["article_labels"] = article_labels
+			article_json["article_label_lead"] = article_labels[0]
+		except Exception as e:
+			None
 		# Title
 		try:
 			article_title = article_header.find(class_='article__title')
 			article_json["article_title"] = article_title.text.strip()
+			sentiment_obj = st.get_text_sentiment(article_json["article_title"])
+			article_json["article_title_sentiment"] = sentiment_obj
 		except Exception as e:
 			None
 		# Article info
@@ -126,6 +116,8 @@ def process_html(article_obj):
 		# Summary
 		try:
 			article_json["article_summary"] = article_body.find_all(class_='article__summary')[0].text.strip()
+			sentiment_obj = st.get_text_sentiment(article_json["article_summary"])
+			article_json["article_summary_sentiment"] = sentiment_obj
 		except Exception as e:
 			None
 		# Contents
@@ -133,6 +125,8 @@ def process_html(article_obj):
 			article_contents = article_body.find_all(class_='article__body-dynamic dev-article-contents')[0]
 			all_p = article_contents.find_all('p')
 			article_json["article_contents"] = "\n\n".join([p.text.strip() for p in all_p if len(p.text.strip()) > 0])
+			sentiment_obj = st.get_text_sentiment(article_json["article_contents"])
+			article_json["article_contents_sentiment"] = sentiment_obj
 		except Exception as e:
 			None
 		# NOTE - Article tags
@@ -141,8 +135,43 @@ def process_html(article_obj):
 			article_json["article_tags"] = [tag.text.strip() for tag in article_tags]
 		except Exception as e:
 			None
+		# NOTE - Comments
+		comments_containers = html.find_all(class_='comments')
+		comments_json = []
+		for comments_container in comments_containers:
+			comments = comments_container.find_all(class_='comment')
+			last_toplevel_comment = "-1"
+			for comment in comments:
+				try:
+					if "comment--add" in comment.attrs["class"]:
+						continue
+					comment_dict = {}
+					comment_dict["id"] = comment.attrs["id"]
+					comment_dict["timestamp"] = comment.find(class_='comment__timestamp').text.strip()
+					comment_dict["body"] = comment.find(class_='comment__body').text.strip()
+					sentiment_obj = st.get_text_sentiment(comment_dict["body"])
+					comment_dict["sentiment"] = sentiment_obj["sentiment"]
+					comment_dict["sentiment_positive_count"] = sentiment_obj["positive_count"]
+					comment_dict["sentiment_negative_count"] = abs(sentiment_obj["negative_count"])
+					comment_dict["sentiment_word_count"] = sentiment_obj["count"]
+					# comment_dict["sentiment_object"] = sentiment_obj
+					comment_dict["author"] = comment.find(class_='comment__author').text.strip()
+					comment_dict["likes"] = comment.find_all(class_='icon-text__value')[1].text.strip()
+					comment_dict["dislikes"] = comment.find_all(class_='icon-text__value')[2].text.strip()
+					comment_dict["type"] = "comment"
+					comment_dict["parent"] = ""
+					if "comment--reply" in comment.attrs["class"]:
+						comment_dict["type"] = "reply"
+						comment_dict["parent"] = last_toplevel_comment
+					else:
+						last_toplevel_comment = comment_dict["id"]
+					comments_json.append(comment_dict)
+				except Exception as e:
+					None
+		if comments_containers:
+			article_json["comments"] = comments_json
+			article_json["scraped_comments_count"] = len(comments_json)
 		# NOTE - Write to file
-		filename = Path(raw_path).stem #os.path.basename(filename).stem
 		uf.write_to_file(json_path, json.dumps(article_json, indent=2)) #os.path.join(*[processed_json_dir, f"{filename}.json"]), json.dumps(article_json, indent=2))
 	except Exception as e:
 		# print(f"Exception in process_html: {e}")
@@ -151,14 +180,30 @@ def process_html(article_obj):
 def get_matching_files(path, file_extension):
 	return [f for f in os.listdir(path) if f.endswith(file_extension)]
 
+def filter_by_time(articles_dict):
+	for article_obj_key in list(articles_dict.keys()):
+		article_obj = articles_dict[article_obj_key]
+		parsed_timestamp = datetime.strptime(article_obj["date"], "%Y-%m-%d_%H-%M")
+		if not (date_min < parsed_timestamp < date_max):
+			del articles_dict[article_obj_key]
+	return articles_dict
+
 def process_all_html_files(path):
 	articles_index = json.loads(uf.read_from_file(os.path.join(script_dir, json_name)))
+	articles_index = filter_by_time(articles_index)
 	print(f"Processing {len(articles_index.values())} articles.")
 	for i, article_obj in enumerate(articles_index.values()):
+		# Condition for individual article testing
+		# if article_obj["date"] != "2021-11-20_00-15":
+		# 	continue
 		try:
+			print(f"Processing article {i + 1} of {len(articles_index.values())}.")
 			process_html(article_obj)
 		except Exception as e:
 			print(f"Exception processing {article_obj['link']}: {e}")
+		# NOTE - for testing purposes
+		# if i == 50:
+		# 	break
 
 if __name__ == "__main__":
 	# process_html(os.path.join(os.path.join(*[script_dir, "raw"]), "2021-11-19_22-43 Interpelacija Simone Kustec_ 'Ko smo jo najbolj potrebovali, je bila odsotna'.html"))

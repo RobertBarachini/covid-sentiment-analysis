@@ -20,14 +20,17 @@ def set_logging(filename):
 	logger.info(f"Set up logging for '{filename}' with level '{level}'")
 	return logger
 
-def write_to_file(filepath, contents):
+def write_to_file(filepath, contents, type="w"):
 	if not os.path.exists(os.path.dirname(filepath)):
 		os.makedirs(os.path.dirname(filepath))
-	with open(filepath, 'w', encoding='utf-8') as f:
+	with open(filepath, type, encoding='utf-8') as f:
 		try:
 			f.write(contents)
 		except Exception as e:
 			print('Exception writing to file: ' + str(e))
+
+def append_to_file(filepath, contents):
+	write_to_file(filepath, contents, "a")
 
 def read_from_file(filepath):
 	with open(filepath, 'r', encoding='utf-8') as f:

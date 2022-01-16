@@ -20,25 +20,29 @@ current_dir = os.getcwd()
 script_pathname = os.path.abspath(__file__)
 script_dir = os.path.dirname(script_pathname)
 
-# Context for scrapers
-# num_workers = 64
-# active_workers = 0 #num_workers
-# script_name = "24ur-runner-scraper"
-# json_name = "article_links.json"
-# worker_prefix = "worker_scraper_"
-# executable_path = f"{os.path.join(script_dir, 'scraper.py')}" #'LOCAL/async_tester.py')}")
-# date_min = datetime(2019, 11, 30)
-# date_max = datetime(2021, 12, 1)
+context = "parsing" # "scraping"
 
-# Context for parsers
-num_workers = 64
+# Context for scrapers / default context
+num_workers = 64 # 64
 active_workers = 0 #num_workers
-script_name = "24ur-runner-parser"
+script_name = "24ur-runner-scraper"
 json_name = "article_links.json"
-worker_prefix = "worker_parser_"
-executable_path = f"{os.path.join(script_dir, 'parser.py')}" #'LOCAL/async_tester.py')}")
+worker_prefix = "worker_scraper_"
+executable_path = f"{os.path.join(script_dir, 'scraper.py')}" #'LOCAL/async_tester.py')}")
+# TODO move this to util functions so all functions access the same time
 date_min = datetime(2019, 11, 30)
 date_max = datetime(2021, 12, 1)
+
+# Context for parsers
+if context == "parsing":
+	num_workers = 64
+	active_workers = 0 #num_workers
+	script_name = "24ur-runner-parser"
+	json_name = "article_links.json"
+	worker_prefix = "worker_parser_"
+	executable_path = f"{os.path.join(script_dir, 'parser.py')}" #'LOCAL/async_tester.py')}")
+	date_min = datetime(2019, 11, 30)
+	date_max = datetime(2021, 12, 1)
 
 # print("EXITING - SAFETY")
 # exit()
@@ -72,15 +76,45 @@ def write_splits_to_file(splits):
 		full_worker_name = f"{get_worker_name(i)}.json" #f"{worker_prefix}{i:0{len(str(num_workers))}}.json"
 		uf.write_to_file(os.path.join(script_dir, full_worker_name), json.dumps(split, indent=2))
 
+def get_article_filepath(article_obj):
+	parsed_timestamp = datetime.strptime(article_obj["date"], "%Y-%m-%d_%H-%M")
+	datetime_filesystem = parsed_timestamp.strftime("%Y-%m-%d_%H-%M")
+	article_title = article_obj["title"]
+	article_title_safe = uf.get_safe_filename(article_title)
+	filename_final = f"{datetime_filesystem} {article_title_safe}{'.html' if context == 'scraping' else '.json'}"
+	write_path = os.path.join(*[script_dir, "raw", filename_final])
+	if context == "parsing":
+		write_path = os.path.join(*[script_dir, "processed", "json", filename_final])
+	return write_path
+
 def prepare_workloads():
 	articles_dict = json.loads(uf.read_from_file(os.path.join(script_dir, json_name)))
-	# Filter out articles that are out of range
+	counter_filter_date = 0
+	counter_filter_file_exists = 0
+	print(f"{len(articles_dict)} articles in total (before filtering)")
+	log.info(f"{len(articles_dict)} articles in total (before filtering)")
+	# Filter out articles that are out of range or already exist
 	for article_obj_key in list(articles_dict.keys()):
 		article_obj = articles_dict[article_obj_key]
 		parsed_timestamp = datetime.strptime(article_obj["date"], "%Y-%m-%d_%H-%M")
+		# Remove out of date range articles
 		if not (date_min < parsed_timestamp < date_max):
+			counter_filter_date += 1
 			del articles_dict[article_obj_key]
+		# Remove articles that already exist on disk
+		if os.path.exists(get_article_filepath(article_obj)):
+			counter_filter_file_exists += 1
+			del articles_dict[article_obj_key]
+	print(f"{counter_filter_date} articles filtered out of date range")
+	log.info(f"{counter_filter_date} articles filtered out of date range")
+	print(f"{counter_filter_file_exists} articles filtered out because they already exist on disk")
+	log.info(f"{counter_filter_file_exists} articles filtered out because they already exist on disk")
+	print(f"{len(articles_dict)} articles left after filtering")
+	log.info(f"{len(articles_dict)} articles left after filtering")
 	splits = get_split_workloads(articles_dict)
+	for i, split in enumerate(splits):
+		print(f"{len(split)} articles in split {i}")
+		log.info(f"{len(split)} articles in split {i}")
 	write_splits_to_file(splits)
 	return splits
 
@@ -170,13 +204,13 @@ def run_workers():
 				active_workers -= 1
 				# Restart worker if exit code is not 0
 				# TODO add max restart count
-				if exit_code != 0:
-					print(f"Restarting [{get_worker_name(worker_object_exit['index'])}] - Reason: Exit-code={exit_code}")
-					log.info(f"Restarting [{get_worker_name(worker_object_exit['index'])}] - Reason: Exit-code={exit_code}")
-					worker_object_new = run_worker(worker_object_exit["index"])
-					worker_objects[worker_object_exit["index"]] = worker_object_new
-					active_workers += 1
-					log.info(f"Restarted [{get_worker_name(worker_object_exit['index'])}]")
+				# if exit_code != 0:
+				# 	print(f"Restarting [{get_worker_name(worker_object_exit['index'])}] - Reason: Exit-code={exit_code}")
+				# 	log.info(f"Restarting [{get_worker_name(worker_object_exit['index'])}] - Reason: Exit-code={exit_code}")
+				# 	worker_object_new = run_worker(worker_object_exit["index"])
+				# 	worker_objects[worker_object_exit["index"]] = worker_object_new
+				# 	active_workers += 1
+				# 	log.info(f"Restarted [{get_worker_name(worker_object_exit['index'])}]")
 				print(f"Number of active workers: {active_workers}")
 			else: # isinstance(line, str):
 				# print(f"  {line}", end='') # uncomment this line to see all stdout/stderr

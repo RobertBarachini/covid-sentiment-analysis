@@ -19,7 +19,7 @@ current_dir = os.getcwd()
 script_pathname = os.path.abspath(__file__)
 script_dir = os.path.dirname(script_pathname)
 page_root = "https://www.24ur.com"
-cache_filepath = os.path.join(script_dir, "article_links.json")
+cache_filepath = os.path.join(script_dir, "article_links_new.json")
 timeout_element = 10.0
 polling_element = 0.25
 driver = None
@@ -93,11 +93,13 @@ def scrape_pages():
 				link = f"{page_root}{article_left.parent.get('href')}"
 				log.info(f"Processing article link '{link}'")
 				date_string = article_left.text.split("\n")[1:][0].strip() # 15:52 19. 11. 2021
+				print(f"Date: {date_string}")
 				datetime_object = datetime.strptime(date_string, '%H:%M %d. %m. %Y') 
 				datetime_filesystem = datetime_object.strftime("%Y-%m-%d_%H-%M")
 				title = article_right.find('span', attrs={'class': 'card__title-inside'}, recursive=True).text
 				if link in articles:
 					log.info(f"Skipping duplicate link '{link}'")
+					print(f"Skipping duplicate link '{link}'")
 					continue
 				article = {}
 				article["link"] = link

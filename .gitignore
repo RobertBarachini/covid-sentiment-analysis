@@ -12,6 +12,8 @@
 # Zipped files - for sharing intermittent results
 *.zip
 *.7z
+# Images
+*.svg
 
 # Logs
 logs
